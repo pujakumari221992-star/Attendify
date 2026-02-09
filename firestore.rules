@@ -1,0 +1,57 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helper Functions ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isSuperAdmin() {
+      // Use get() to safely access email, defaulting to empty string if missing
+      return isSignedIn() && request.auth.token.get('email', '') == 'pujakumari2212@gmail.com';
+    }
+
+    function isOwner() {
+      // Ensure the document has a uid field that matches the requestor
+      return isSignedIn() && (resource.data.uid == request.auth.uid);
+    }
+    
+    function isCreateOwner() {
+      // Ensure the data being written has the correct uid
+      return isSignedIn() && request.resource.data.uid == request.auth.uid;
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+    }
+    
+    match /staff/{docId} {
+      allow read: if isOwner() || isSuperAdmin();
+      allow create: if isCreateOwner() || isSuperAdmin();
+      allow update, delete: if isOwner() || isSuperAdmin();
+    }
+    
+    match /attendance/{docId} {
+      allow read: if isOwner() || isSuperAdmin();
+      allow create: if isCreateOwner() || isSuperAdmin();
+      allow update, delete: if isOwner() || isSuperAdmin();
+    }
+    
+    match /logs/{docId} {
+      allow read: if isOwner() || isSuperAdmin();
+      allow create: if isCreateOwner() || isSuperAdmin();
+      allow update, delete: if isOwner() || isSuperAdmin();
+    }
+    
+    match /holidays/{docId} {
+      allow read: if isOwner() || isSuperAdmin();
+      allow create: if isCreateOwner() || isSuperAdmin();
+      allow update, delete: if isOwner() || isSuperAdmin();
+    }
+  }
+}

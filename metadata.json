@@ -1,0 +1,7 @@
+{
+  "name": "Attendify",
+  "description": "Enterprise-grade mobile attendance management system with real-time analytics, salary impact tracking, and automated reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
