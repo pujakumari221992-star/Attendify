@@ -1,0 +1,27 @@
+
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "Here are some localization strings I'm working with in JSON format. The `welcome_message` has placeholders."
+        },
+        {
+          "text": "```json\n{\n  \"welcome_message\": \"Welcome back, {name}! You have {count} new notifications.\",\n  \"btn_cancel\": \"Cancel\",\n  \"error_timeout\": \"The connection timed out. Please try again later.\"\n}\n```"
+        }
+      ]
+    },
+    {
+      "role": "model",
+      "parts": [
+        {
+          "text": "Great! This is a standard way to handle localization. You can load this JSON into your application and use a function to replace the placeholders with dynamic data. Here's a simple JavaScript example of how you could implement that:"
+        },
+        {
+          "text": "```javascript\nconst translations = {\n  \"welcome_message\": \"Welcome back, {name}! You have {count} new notifications.\",\n  \"btn_cancel\": \"Cancel\",\n  \"error_timeout\": \"The connection timed out. Please try again later.\"\n};\n\nfunction formatMessage(key, replacements) {\n  let message = translations[key] || key;\n\n  if (replacements) {\n    for (const placeholder in replacements) {\n      message = message.replace(`{${placeholder}}`, replacements[placeholder]);\n    }\n  }\n\n  return message;\n}\n\n// --- Example Usage ---\n\nconst userName = 'Alex';\nconst notificationCount = 5;\n\nconst welcomeText = formatMessage('welcome_message', { \n  name: userName, \n  count: notificationCount \n});\n\nconsole.log(welcomeText);\n// Expected Output: \"Welcome back, Alex! You have 5 new notifications.\"\n\nconsole.log(formatMessage('btn_cancel'));\n// Expected Output: \"Cancel\"\n```"
+        }
+      ]
+    }
+  ]
+}

@@ -149,15 +149,40 @@ const InputField: React.FC<any> = ({ label, icon, ...props }) => (
   </div>
 );
 
-const StaffScreen: React.FC<any> = ({ staffList, records, onStaffClick, onStaffAdd, isPro }) => {
+const ConfirmationModal: React.FC<{
+  staff: Staff;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ staff, onConfirm, onCancel }) => {
+  const { t } = useAppContext();
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onCancel}>
+      <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-3xl p-6 text-center animate-scale-in shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+          <i className="fa-solid fa-trash-alt"></i>
+        </div>
+        <h3 className="font-black text-lg text-gray-900 dark:text-white">Delete {staff.name}?</h3>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-2">
+          This will permanently remove the staff member and all their associated attendance records. This action cannot be undone.
+        </p>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onCancel} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200 font-bold rounded-xl press-effect">{t('staff_cancel')}</button>
+          <button onClick={onConfirm} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl press-effect shadow-lg shadow-red-500/20">Yes, Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StaffScreen: React.FC<any> = ({ staffList, records, onStaffClick, onStaffAdd, onStaffDelete, isPro }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState<Staff | null>(null);
   const { t } = useAppContext();
   const { showToast } = useToast();
   
   const todayStr = new Date().toISOString().split('T')[0];
 
   const handleAddClick = () => {
-      // Premium Logic: Free Limit is 20
       if (!isPro && staffList.length >= 20) {
           showToast(t('premium_staff_limit_reached'), 'error');
           return;
@@ -165,14 +190,55 @@ const StaffScreen: React.FC<any> = ({ staffList, records, onStaffClick, onStaffA
       setShowAddModal(true);
   };
 
+  const handleDeleteConfirm = () => {
+    if (staffToDelete) {
+      onStaffDelete(staffToDelete);
+      setStaffToDelete(null);
+    }
+  };
+
   const handleReportsClick = () => {
       if (!isPro) {
           showToast(t('premium_upgrade_export'), 'info');
           return;
       }
-      // Currently just a visual feedback as report logic wasn't explicitly provided, 
-      // but this satisfies the requirement to lock the feature.
-      showToast("Reports downloading...", 'success');
+      
+      try {
+          const headers = ['Staff Name', 'Role', 'Date', 'Status', 'Check In'];
+          const rows: string[][] = [];
+          
+          const recordsToExport = [...records].sort((a: AttendanceRecord, b: AttendanceRecord) => b.date.localeCompare(a.date));
+          
+          recordsToExport.forEach((r: AttendanceRecord) => {
+              const staff = staffList.find((s: Staff) => s.id === r.staffId);
+              if (staff) {
+                  rows.push([
+                      `"${staff.name}"`, `"${staff.role}"`, r.date, r.status, r.checkInTime || '--'
+                  ]);
+              }
+          });
+          
+          if (rows.length === 0) {
+              showToast("No attendance records to export", 'info');
+              return;
+          }
+          
+          let csvContent = "data:text/csv;charset=utf-8," 
+              + headers.join(",") + "\n" 
+              + rows.map(e => e.join(",")).join("\n");
+              
+          const encodedUri = encodeURI(csvContent);
+          const link = document.createElement("a");
+          link.setAttribute("href", encodedUri);
+          link.setAttribute("download", `attendance_report_${new Date().toISOString().split('T')[0]}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          showToast("Report downloaded successfully", 'success');
+      } catch (e) {
+          showToast("Failed to generate report", 'error');
+      }
   };
 
   return (
@@ -200,22 +266,24 @@ const StaffScreen: React.FC<any> = ({ staffList, records, onStaffClick, onStaffA
           staffList.map((staff: Staff) => {
             const status = records?.find((r: AttendanceRecord) => r.staffId === staff.id && r.date === todayStr)?.status;
             return (
-                <div key={staff.id} onClick={() => onStaffClick(staff)} className="flex items-center bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-gray-100 dark:border-transparent press-effect cursor-pointer">
-                  <div className="w-12 h-12 rounded-full bg-[#0F766E] flex items-center justify-center text-white font-bold text-lg mr-4 shrink-0 relative">
-                    {staff.avatar ? <img src={staff.avatar} className="w-full h-full object-cover rounded-full" /> : staff.name.charAt(0).toUpperCase()}
-                    {status && (
-                        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center" style={{backgroundColor: ATTENDANCE_COLORS[status]}}>
-                            <i className="fa-solid fa-check text-[8px] text-white"></i>
-                        </div>
-                    )}
+                <div key={staff.id} className="flex items-center bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-gray-100 dark:border-transparent">
+                  <div onClick={() => onStaffClick(staff)} className="flex items-center flex-1 min-w-0 cursor-pointer">
+                    <div className="w-12 h-12 rounded-full bg-[#0F766E] flex items-center justify-center text-white font-bold text-lg mr-4 shrink-0 relative">
+                      {staff.avatar ? <img src={staff.avatar} className="w-full h-full object-cover rounded-full" /> : staff.name.charAt(0).toUpperCase()}
+                      {status && (
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center" style={{backgroundColor: ATTENDANCE_COLORS[status]}}>
+                              <i className="fa-solid fa-check text-[8px] text-white"></i>
+                          </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-800 dark:text-slate-50 truncate">{staff.name}</h3>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{staff.role} • {staff.shift}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-800 dark:text-slate-50 truncate">{staff.name}</h3>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{staff.role} • {staff.shift}</p>
-                  </div>
-                  <div className="w-8 h-8 flex items-center justify-center text-gray-300">
-                      <i className="fa-solid fa-chevron-right text-xs"></i>
-                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); setStaffToDelete(staff); }} className="w-10 h-10 flex items-center justify-center text-gray-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-500 transition-colors press-effect rounded-lg ml-2">
+                      <i className="fa-solid fa-trash-alt text-sm"></i>
+                  </button>
                 </div>
             );
           })
@@ -226,12 +294,14 @@ const StaffScreen: React.FC<any> = ({ staffList, records, onStaffClick, onStaffA
         <i className="fa-solid fa-plus text-xl"></i>
       </button>
       
-      <button onClick={handleReportsClick} className="bg-white dark:bg-slate-800 mx-6 mb-safe-bottom rounded-xl font-bold text-[#0F766E] py-4 shadow-lg mb-24 press-effect flex items-center justify-center gap-2">
+      <button onClick={handleReportsClick} className="bg-white dark:bg-slate-800 mx-6 mb-safe-bottom rounded-xl font-bold text-[#0F766E] py-4 shadow-lg mb-24 press-effect flex items-center justify-center gap-2 border border-gray-100 dark:border-slate-700">
+          <i className="fa-solid fa-file-csv"></i>
           {t('staff_view_reports')}
-          {!isPro && <i className="fa-solid fa-lock text-xs opacity-50"></i>}
+          {!isPro && <i className="fa-solid fa-lock text-xs opacity-50 ml-1"></i>}
       </button>
 
       {showAddModal && <AddStaffModal onClose={() => setShowAddModal(false)} onAdd={onStaffAdd} staffList={staffList} />}
+      {staffToDelete && <ConfirmationModal staff={staffToDelete} onConfirm={handleDeleteConfirm} onCancel={() => setStaffToDelete(null)} />}
     </div>
   );
 };

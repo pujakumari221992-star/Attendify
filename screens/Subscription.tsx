@@ -1,48 +1,92 @@
-
 import React, { useState } from 'react';
 import { Subscription } from '../types';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
+import { db, doc, getDoc, auth } from '../firebase';
 
 declare var Razorpay: any;
+
+const DowngradeConfirmationModal: React.FC<{
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ onConfirm, onCancel }) => {
+  const { t } = useAppContext();
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onCancel}>
+      <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-3xl p-6 text-center animate-scale-in shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="w-16 h-16 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-500 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+          <i className="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h3 className="font-black text-lg text-gray-900 dark:text-white">Downgrade to Free?</h3>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-2">
+          You will lose access to Pro features like unlimited staff members and an ad-free experience. Are you sure?
+        </p>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onCancel} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200 font-bold rounded-xl press-effect">{t('btn_cancel')}</button>
+          <button onClick={onConfirm} className="flex-1 py-3 bg-yellow-500 text-white font-bold rounded-xl press-effect shadow-lg shadow-yellow-500/20">Yes, Downgrade</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const SubscriptionScreen: React.FC<{
   onBack: () => void;
   isPro: boolean;
   onUpgrade: (sub: Subscription) => void;
+  onDowngrade: () => void;
   subscription: Subscription;
   userEmail: string;
-}> = ({ isPro, onUpgrade, userEmail, onBack }) => {
+}> = ({ isPro, onUpgrade, userEmail, onBack, onDowngrade }) => {
   const [cycle, setCycle] = useState<'monthly' | 'yearly'>('yearly');
   const [loading, setLoading] = useState(false);
+  const [showDowngradeConfirm, setShowDowngradeConfirm] = useState(false);
   const { t } = useAppContext();
   const { showToast } = useToast();
 
-  const handleUpgrade = () => {
+  const handleUpgrade = async () => {
     setLoading(true);
-    
-    // Retrieve the Key ID from secure storage (local storage)
-    const storedKeyId = localStorage.getItem('attendify_razorpay_key_id');
 
-    if (!storedKeyId) {
+    let razorpayKeyId = localStorage.getItem('razorpay_live_key_id');
+
+    // As a fallback, if the key isn't in local storage, fetch it directly.
+    if (!razorpayKeyId) {
+      try {
+        const configDoc = await getDoc(doc(db, "config", "razorpay"));
+        if (configDoc.exists() && configDoc.data().live_key_id) {
+          razorpayKeyId = configDoc.data().live_key_id;
+          localStorage.setItem('razorpay_live_key_id', razorpayKeyId);
+        }
+      } catch (error) {
         setLoading(false);
-        showToast("Payment configuration missing. Please enter Live API Keys in Profile -> Payment Settings.", "error");
+        showToast("Error fetching payment configuration. Check connection.", "error");
+        return;
+      }
+    }
+
+    if (!razorpayKeyId) {
+        setLoading(false);
+        showToast("Payment gateway has not been configured by the administrator yet.", "error");
         return;
     }
 
-    // Pricing configuration (in INR)
-    // Yearly: 500, Monthly: 199
+    if (!razorpayKeyId.startsWith('rzp_live_')) {
+        setLoading(false);
+        showToast("An invalid payment key is configured. Please contact support at pujakumari221992@gmail.com.", "error");
+        return;
+    }
+
     const amount = cycle === 'monthly' ? 199 : 500; 
 
     const options = {
-      key: storedKeyId, 
-      amount: amount * 100, // Amount in paise
+      key: razorpayKeyId,
+      amount: amount * 100,
       currency: "INR",
       name: "Attendify Premium",
       description: cycle === 'monthly' ? 'Monthly Plan - ₹199' : 'Yearly Plan - ₹500',
       image: "https://cdn-icons-png.flaticon.com/512/1043/1043444.png",
       handler: function (response: any) {
-        // Payment Success
         const duration = cycle === 'monthly' ? 30 * 24 * 60 * 60 * 1000 : 365 * 24 * 60 * 60 * 1000;
         
         onUpgrade({ 
@@ -70,6 +114,12 @@ const SubscriptionScreen: React.FC<{
       }
     };
 
+    if (typeof Razorpay === 'undefined') {
+        setLoading(false);
+        showToast("Payment gateway failed to load. Check connection.", "error");
+        return;
+    }
+
     try {
         const rzp = new Razorpay(options);
         rzp.on('payment.failed', function (response: any){
@@ -80,10 +130,15 @@ const SubscriptionScreen: React.FC<{
     } catch (e) {
         console.error("Razorpay SDK Error:", e);
         setLoading(false);
-        showToast("Could not open payment gateway. Check connection.", "error");
+        showToast("Could not open payment gateway. Check connection or contact support at pujakumari221992@gmail.com.", "error");
     }
   };
   
+  const handleConfirmDowngrade = () => {
+    setShowDowngradeConfirm(false);
+    onDowngrade();
+  };
+
   const proFeatures = ['Unlimited Staff Members', 'Ad-free Experience', 'Priority Support', 'CSV Exports & Reports'];
   const freeFeatures = ['Up to 20 Staff', 'Ad-supported', 'Basic Analytics'];
 
@@ -110,7 +165,6 @@ const SubscriptionScreen: React.FC<{
           </button>
         </div>
         
-        {/* PRO PLAN CARD */}
         <div className="bg-gradient-to-br from-[#136A73] to-[#0D9488] p-6 rounded-3xl shadow-xl relative text-white overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
           {cycle === 'yearly' && <div className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full border border-white/20">{t('subscription_recommended')}</div>}
@@ -139,7 +193,6 @@ const SubscriptionScreen: React.FC<{
           </button>
         </div>
         
-        {/* FREE PLAN */}
         <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-gray-100 dark:border-slate-700">
           <p className="font-bold text-gray-400 text-sm uppercase tracking-widest mb-1">{t('subscription_free_plan')}</p>
            <p className="text-4xl font-black text-gray-900 dark:text-white mb-6">
@@ -153,7 +206,7 @@ const SubscriptionScreen: React.FC<{
               </li>
             ))}
           </ul>
-          <button disabled={!isPro} className="w-full py-4 bg-gray-50 dark:bg-slate-700 text-gray-400 rounded-xl font-bold text-sm uppercase tracking-widest">
+          <button onClick={() => setShowDowngradeConfirm(true)} disabled={!isPro} className="w-full py-4 bg-gray-50 dark:bg-slate-700 text-gray-400 rounded-xl font-bold text-sm uppercase tracking-widest press-effect disabled:opacity-50 disabled:cursor-not-allowed">
             {isPro ? "Downgrade to Free" : "Current Plan"}
           </button>
         </div>
@@ -166,6 +219,7 @@ const SubscriptionScreen: React.FC<{
           </div>
         </div>
       </div>
+      {showDowngradeConfirm && <DowngradeConfirmationModal onConfirm={handleConfirmDowngrade} onCancel={() => setShowDowngradeConfirm(false)} />}
     </div>
   );
 };

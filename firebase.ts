@@ -1,3 +1,4 @@
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { 
   getAuth, 
@@ -34,6 +35,8 @@ if (typeof window !== 'undefined') {
 }
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('profile');
+googleProvider.addScope('email');
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export const resetPassword = (email: string) => sendPasswordResetEmail(auth, email);

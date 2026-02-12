@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { Staff, Subscription, StaffLog, LogType, AttendanceStatus } from '../types';
 import { useAppContext } from '../hooks/useAppContext';
 import { LANGUAGES } from '../languages';
-import { resetPassword, auth, addDoc, collection, serverTimestamp, db } from '../firebase';
+import { resetPassword, auth, addDoc, collection, serverTimestamp, db, setDoc, doc, getDoc } from '../firebase';
 import { useToast } from '../hooks/useToast';
 import PrivacyPolicyScreen from './PrivacyPolicy';
 import { ATTENDANCE_COLORS, LOG_TYPE_TO_TRANSLATION_KEY } from '../constants';
@@ -101,68 +100,88 @@ const TimeLogModal: React.FC<{
     );
 };
 
-const PaymentSettings: React.FC = () => {
+const LivePaymentSettings: React.FC = () => {
     const { t } = useAppContext();
     const { showToast } = useToast();
     const [keyId, setKeyId] = useState('');
-    const [keySecret, setKeySecret] = useState('');
     const [isConfigured, setIsConfigured] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
-        const storedId = localStorage.getItem('attendify_razorpay_key_id');
-        const storedSecret = localStorage.getItem('attendify_razorpay_key_secret');
-        if (storedId) setKeyId(storedId);
-        if (storedSecret) setKeySecret(storedSecret);
-        if (storedId && storedSecret) setIsConfigured(true);
+        const fetchKey = async () => {
+            const storedId = localStorage.getItem('razorpay_live_key_id');
+            if (storedId) {
+                setKeyId(storedId);
+                setIsConfigured(true);
+                return;
+            }
+            try {
+                const configDoc = await getDoc(doc(db, "config", "razorpay"));
+                if (configDoc.exists()) {
+                    const key = configDoc.data().live_key_id;
+                    if (key) {
+                        setKeyId(key);
+                        localStorage.setItem('razorpay_live_key_id', key);
+                        setIsConfigured(true);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch global payment key", e);
+            }
+        };
+        fetchKey();
     }, []);
 
-    const handleSave = () => {
-        if (!keyId || !keySecret) {
-            showToast(t('settings_enter_keys'), 'error');
-            return;
+    const handleSave = async () => {
+        if (!keyId || !keyId.startsWith('rzp_live_')) return showToast('Please enter a valid Razorpay Live Key ID', 'error');
+        
+        setIsLoading(true);
+        try {
+            await setDoc(doc(db, "config", "razorpay"), { live_key_id: keyId });
+            localStorage.setItem('razorpay_live_key_id', keyId);
+            setIsConfigured(true);
+            showToast('Razorpay LIVE Key ID saved successfully for all users', 'success');
+        } catch(e) {
+            console.error("Failed to save key to Firestore:", e);
+            showToast('Failed to save key to the database. Check connection.', 'error');
+        } finally {
+            setIsLoading(false);
         }
-        localStorage.setItem('attendify_razorpay_key_id', keyId);
-        localStorage.setItem('attendify_razorpay_key_secret', keySecret);
-        setIsConfigured(true);
-        showToast(t('settings_keys_saved'), 'success');
     };
 
     return (
         <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 space-y-4">
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                   <i className="fa-solid fa-credit-card text-teal-500 text-lg"></i>
-                   <h3 className="font-bold text-gray-800 dark:text-slate-200">{t('settings_payment_title')}</h3>
+                   <i className="fa-solid fa-rocket text-green-500 text-lg"></i>
+                   <h3 className="font-bold text-gray-800 dark:text-slate-200">Global Payment Gateway</h3>
                 </div>
                 {isConfigured ? (
                     <span className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider animate-scale-in">
-                        <i className="fa-solid fa-check-circle mr-1"></i> Active
+                        <i className="fa-solid fa-check-circle mr-1"></i> ACTIVE
                     </span>
                 ) : (
-                    <span className="bg-gray-100 dark:bg-slate-700 text-gray-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider">
-                        Inactive
+                    <span className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider">
+                        <i className="fa-solid fa-triangle-exclamation mr-1"></i> Setup Required
                     </span>
                 )}
             </div>
             
             <div className="space-y-3">
                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest">Razorpay Key ID</label>
+                    <label className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest">Razorpay Live Key ID</label>
                     <input type="text" value={keyId} onChange={e => setKeyId(e.target.value)} className="w-full h-12 bg-gray-50 dark:bg-slate-700 rounded-xl px-4 font-semibold outline-none dark:text-white border border-gray-200 dark:border-slate-600 text-sm" placeholder="rzp_live_..." />
+                    <p className="text-[10px] text-gray-400 dark:text-slate-500 ml-1">This key will be used for all payments across the app.</p>
                  </div>
                  
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-widest">Razorpay Secret</label>
-                    <input type="password" value={keySecret} onChange={e => setKeySecret(e.target.value)} className="w-full h-12 bg-gray-50 dark:bg-slate-700 rounded-xl px-4 font-semibold outline-none dark:text-white border border-gray-200 dark:border-slate-600 text-sm" placeholder="••••••••••••••" />
-                 </div>
-
-                 <button onClick={handleSave} className="w-full py-3 bg-[#0F766E] text-white rounded-xl font-bold text-xs uppercase tracking-widest press-effect shadow-md shadow-teal-900/10">
-                     {t('settings_save_keys')}
+                 <button onClick={handleSave} disabled={isLoading} className="w-full py-3 bg-[#136A73] text-white rounded-xl font-bold text-xs uppercase tracking-widest press-effect shadow-md shadow-teal-900/10 disabled:bg-gray-400">
+                     {isLoading ? <i className="fa-solid fa-spinner animate-spin"></i> : 'Save Global Key'}
                  </button>
             </div>
         </div>
     );
 };
+
 
 const ProfileScreen: React.FC<{
   onLogout: () => void;
@@ -274,9 +293,6 @@ const ProfileScreen: React.FC<{
           </div>
         </div>
 
-        {/* PAYMENT SETTINGS */}
-        <PaymentSettings />
-        
         <div className="space-y-3">
              <h3 className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-[3px] ml-4">{t('nav_schedule')}</h3>
              <NavItem icon="fa-user-clock" label={t('profile_lock_entry_log')} onClick={() => setShowTimeLogs(true)} />
@@ -287,6 +303,7 @@ const ProfileScreen: React.FC<{
         <div className="space-y-3">
           <h3 className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-[3px] ml-4">{t('profile_account')}</h3>
           <NavItem icon="fa-crown" label={t('nav_pro')} value={t(subscription.plan === 'Pro' ? 'profile_pro_member' : 'profile_free_plan')} onClick={onShowSubscription} />
+          {isAdmin && <LivePaymentSettings />}
         </div>
         
         <div className="space-y-3">
@@ -298,8 +315,8 @@ const ProfileScreen: React.FC<{
 
         <div className="space-y-3">
           <h3 className="text-[10px] font-black text-gray-400 dark:text-slate-500 uppercase tracking-[3px] ml-4">{t('profile_support')}</h3>
-          <NavItem icon="fa-circle-question" label={t('profile_help_center')} onClick={() => window.open('mailto:support@attendify.com', '_blank')} />
-          <NavItem icon="fa-headset" label={t('profile_contact_us')} onClick={() => window.open('mailto:support@attendify.com', '_blank')} />
+          <NavItem icon="fa-circle-question" label={t('profile_help_center')} onClick={() => window.open('mailto:pujakumari221992@gmail.com', '_blank')} />
+          <NavItem icon="fa-headset" label={t('profile_contact_us')} onClick={() => window.open('mailto:pujakumari221992@gmail.com', '_blank')} />
           <NavItem icon="fa-shield-halved" label={t('profile_privacy_policy')} onClick={() => setShowPrivacy(true)} />
         </div>
         

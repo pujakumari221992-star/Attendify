@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   auth, 
@@ -129,19 +128,61 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ initialView = 'signin', initial
   const handleSocial = async () => {
     setError(null);
     setLoading(true);
+    console.log("[Auth] Initiating Google Sign-In sequence...");
+
     try {
-      await setPersistence(auth, browserLocalPersistence);
-      const cred = await signInWithPopup(auth, googleProvider);
-      await setDoc(doc(db, "users", cred.user.uid), {
-        fullName: cred.user.displayName,
-        email: cred.user.email,
-      }, { merge: true });
-      if (!cred.user.emailVerified) {
-        await sendEmailVerification(cred.user);
-        setView('verify');
+      // 1. Ensure persistence is set before sign-in
+      try {
+        await setPersistence(auth, browserLocalPersistence);
+      } catch (pErr) {
+        console.warn("[Auth] Persistence setting failed (non-fatal):", pErr);
       }
+      
+      // 2. Trigger Popup
+      const cred = await signInWithPopup(auth, googleProvider);
+      const user = cred.user;
+      console.log("[Auth] Google Sign-In Successful for user:", user.email);
+
+      // 3. Update User Record in Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        fullName: user.displayName || 'Google User',
+        email: user.email,
+        authProvider: 'google',
+        lastLogin: serverTimestamp()
+      }, { merge: true });
+
+      // 4. Verify Status
+      // If the email is somehow not verified (rare for Google), we enforce verification
+      if (!user.emailVerified) {
+        console.log("[Auth] User email not verified, sending verification.");
+        await sendEmailVerification(user);
+        setView('verify');
+        // We do not stop here; App.tsx's onAuthStateChanged will detect the user state 
+        // and show the verification screen if needed based on emailVerified property.
+      }
+      
     } catch (err: any) {
-      if (err.code !== 'auth/popup-closed-by-user') setError(t('auth_error_social_failed'));
+      console.error("[Auth] Google Sign-In Error:", err);
+      console.error("[Auth] Error Code:", err.code);
+      console.error("[Auth] Error Message:", err.message);
+
+      let errorMessage = t('auth_error_social_failed');
+      
+      // Map specific error codes to user-friendly messages
+      if (err.code === 'auth/popup-closed-by-user') {
+        errorMessage = "Sign-in was cancelled.";
+      } else if (err.code === 'auth/popup-blocked') {
+        errorMessage = "Popup blocked. Please allow popups for this site.";
+      } else if (err.code === 'auth/unauthorized-domain') {
+        // Helpful message for developers/users hitting domain issues
+        errorMessage = `Domain (${window.location.hostname}) is not authorized. Add it to Firebase Console > Auth > Settings > Authorized Domains.`;
+      } else if (err.code === 'auth/network-request-failed') {
+        errorMessage = t('auth_error_network_failed');
+      } else if (err.message) {
+        errorMessage = `Login error: ${err.message}`;
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -152,7 +193,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ initialView = 'signin', initial
       <div className="absolute inset-0 bg-white dark:bg-slate-950 p-8 flex flex-col items-center justify-center text-center animate-subtle-fade-in-up">
         <div className="w-24 h-24 bg-teal-50 dark:bg-teal-900/20 rounded-[40px] flex items-center justify-center mb-10"><i className="fa-solid fa-paper-plane text-[#136A73] text-4xl"></i></div>
         <h1 className="text-3xl font-black text-gray-900 dark:text-slate-50 mb-4 tracking-tight">{t('auth_verify_email_title')}</h1>
-        <p className="text-gray-500 dark:text-slate-400 text-sm font-medium leading-relaxed mb-10 px-4">{t('auth_verify_email_desc', { email: <span className="text-[#136A73] font-black">{email}</span> })}</p>
+        <p className="text-gray-50 dark:text-slate-400 text-sm font-medium leading-relaxed mb-10 px-4">{t('auth_verify_email_desc', { email: <span className="text-[#136A73] font-black">{email}</span> })}</p>
         <button onClick={() => window.location.reload()} className="w-full max-w-xs py-5 bg-[#136A73] text-white rounded-3xl font-black text-xs uppercase tracking-[2px] btn-3d shadow-xl shadow-teal-900/20 press-effect">{t('auth_ive_verified')}</button>
         <button onClick={() => signOut(auth).then(() => setView('signin'))} className="mt-8 text-xs font-black text-gray-400 uppercase tracking-widest underline underline-offset-8 press-effect">{t('auth_back_to_login')}</button>
       </div>

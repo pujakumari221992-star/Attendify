@@ -7,7 +7,7 @@ interface AppContextType {
   language: string;
   setLanguage: (langCode: string) => void;
   t: (key: string, replacements?: Record<string, any>) => string;
-  isTranslating: null;
+  isTranslating: boolean;
   theme: Theme;
   toggleTheme: () => void;
   locale: string;

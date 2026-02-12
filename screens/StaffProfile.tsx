@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Staff, AttendanceRecord, AttendanceStatus, StaffLog } from '../types';
 import { useAppContext } from '../hooks/useAppContext';
@@ -65,10 +64,20 @@ const MarkAttendanceModal: React.FC<{
     );
 };
 
-const StaffProfileScreen: React.FC<any> = ({ staff, records, logs, onClose, onMarkAttendance, isPro }) => {
+const StaffProfileScreen: React.FC<{
+  staff: Staff;
+  records: AttendanceRecord[];
+  logs: StaffLog[];
+  onClose: () => void;
+  onMarkAttendance: (staffId: string, date: string, status: AttendanceStatus | null) => void;
+  onUpdateNotes: (staffId: string, notes: string) => void;
+  isPro: boolean;
+}> = ({ staff, records, logs, onClose, onMarkAttendance, onUpdateNotes, isPro }) => {
   const [view, setView] = useState<'details' | 'calendar'>('details');
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [notes, setNotes] = useState(staff.notes || '');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
   const { t, locale, language } = useAppContext();
 
   const handleDateChange = (inc: number) => setCalendarDate(d => {
@@ -76,6 +85,12 @@ const StaffProfileScreen: React.FC<any> = ({ staff, records, logs, onClose, onMa
       newDate.setMonth(d.getMonth() + inc);
       return newDate;
   });
+  
+  const handleSaveNotes = async () => {
+    setIsSavingNotes(true);
+    await onUpdateNotes(staff.id, notes);
+    setIsSavingNotes(false);
+  };
 
   const calendarData = useMemo(() => {
     const year = calendarDate.getFullYear();
@@ -176,6 +191,23 @@ const StaffProfileScreen: React.FC<any> = ({ staff, records, logs, onClose, onMa
                 <p className="text-sm text-gray-800 dark:text-slate-200 font-bold">{t('stats_final_salary')}</p>
                 <p className="font-bold text-xl text-teal-600 dark:text-teal-400">₹ {profileStats.finalSalary.toLocaleString('en-IN', {maximumFractionDigits: 0})}</p>
             </div>
+        </div>
+
+        {/* Notes Section */}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm">
+            <h3 className="font-bold text-sm text-gray-500 mb-3 uppercase tracking-wider">{t('staff_notes_title')}</h3>
+            <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder={t('staff_notes_placeholder')}
+            className="w-full h-32 bg-gray-50 dark:bg-slate-700 rounded-xl p-4 text-sm font-medium border-2 border-transparent focus:border-teal-500 outline-none resize-none dark:text-white"
+            />
+            <button 
+                onClick={handleSaveNotes}
+                disabled={isSavingNotes}
+                className="w-full mt-3 py-3 bg-[#0F766E] text-white rounded-xl font-bold text-xs uppercase tracking-widest press-effect shadow-md shadow-teal-900/10 disabled:bg-gray-400 dark:disabled:bg-slate-600">
+                {isSavingNotes ? <i className="fa-solid fa-spinner animate-spin"></i> : t('staff_notes_save')}
+            </button>
         </div>
       </div>
       
